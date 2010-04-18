@@ -158,17 +158,13 @@ installed. It is used as workaround.
                             $('#clients_status').html(data.content.clients);
                         }
                     }
-                    else if (data.type == 'move') {
-                        var canvas = $('canvas');
-                        var pen = canvas[0].getContext("2d");
-                        pen.beginPath();
-                        pen.moveTo(data.x, data.y);
-                    }
                     else if (data.type == 'line') {
                         var canvas = $('canvas');
                         var pen = canvas[0].getContext("2d");
                         pen.strokeStyle = data.col;
-                        pen.lineTo(data.x, data.y);
+                        pen.beginPath();
+                        pen.moveTo(data.x0, data.y0);
+                        pen.lineTo(data.x1, data.y1);
                         pen.stroke();
                     }
                 };
@@ -218,6 +214,9 @@ installed. It is used as workaround.
                 };
             };
 
+            var x0;
+            var y0;
+
             function initCanvas() {
                 var col = getRandomColor();
 
@@ -228,11 +227,9 @@ installed. It is used as workaround.
 
                 var onTouchStart = function(event) {
                     var coords = fixCoords(event.pageX, event.pageY);
-                    ws.send($.toJSON({"type" : "move",
-                                "x" : coords.x,
-                                "y" : coords.y,
-                                "col" : col
-                            }));
+
+                    x0 = coords.x;
+                    y0 = coords.y;
 
                     canvas.bind("mousemove", onTouchMove);
                     canvas.bind("mouseup", onTouchEnd);
@@ -241,10 +238,15 @@ installed. It is used as workaround.
                 var onTouchMove = function(event) {
                     var coords = fixCoords(event.pageX, event.pageY);
                     ws.send($.toJSON({"type" : "line",
-                                "x" : coords.x,
-                                "y" : coords.y,
+                                "x0" : x0,
+                                "y0" : y0,
+                                "x1" : coords.x,
+                                "y1" : coords.y,
                                 "col" : col
                             }));
+
+                    x0 = coords.x;
+                    y0 = coords.y;
                 };
 
                 var onTouchEnd = function(event) {
