@@ -9,6 +9,7 @@ use Mojo::JSON;
 @ARGV = qw/daemon/ unless @ARGV;
 
 my $clients = {};
+my $history = [];
 
 websocket '/' => sub {
     my $self = shift;
@@ -17,7 +18,6 @@ websocket '/' => sub {
     my $cid = "$tx";
 
     $clients->{$cid}->{tx} = $tx;
-    $clients->{$cid}->{dots} = [];
 
     my $total_clients = keys %$clients;
     my $ip = $tx->remote_address;
@@ -26,11 +26,9 @@ websocket '/' => sub {
     # Notify everybody that new client is connected
     _send_broadcast_status(clients => $total_clients);
 
-    # Send all the current dots to the new client
-    _send_dots($tx);
-
-    # Send dots count to the new client
-    _send_status($tx, dots => _count_dots());
+    foreach my $message (@$history) {
+        $self->send_json($message);
+    }
 
     $self->receive_message(
         sub {
@@ -41,12 +39,11 @@ websocket '/' => sub {
             $message = $json->decode($message);
             return unless $message || $json->error;
 
-            my $x   = $message->{x};
-            my $y   = $message->{y};
-            my $col = $message->{col};
+            push @$history, $message;
+            shift @$history while @$history > 100;
 
-            # Send a new dot to everybody
-            _send_dot_broadcast($tx, $x, $y, $col);
+            # Send a new draw to everybody
+            _send_draw_broadcast(%$message);
         }
     );
 
@@ -66,36 +63,9 @@ websocket '/' => sub {
 
 get '/' => 'index';
 
-sub _send_dots {
-    my $tx = shift;
-
-    my @dots;
-    foreach my $cid (keys %$clients) {
-        push @dots, @{$clients->{$cid}->{dots}};
-    }
-    return unless @dots;
-
-    $tx->send_json({type => 'dots', content => [@dots]});
-}
-
-sub _count_dots {
-    return scalar map {@{$clients->{$_}->{dots}}} keys %$clients;
-}
-
-sub _send_dot_broadcast {
-    my ($tx, $x, $y, $col) = @_;
-
-    my $cid = "$tx";
-
-    # Save dot
-    my $dot = {x => $x, y => $y, col => $col};
-    push @{$clients->{$cid}->{dots}}, $dot;
-
+sub _send_draw_broadcast {
     # Send it to everyone
-    _send_broadcast(type => 'dot', content => $dot);
-
-    # Send dots count to everyone
-    _send_broadcast_status(dots => _count_dots());
+    _send_broadcast(@_);
 }
 
 sub _send_broadcast_status {
@@ -157,6 +127,7 @@ installed. It is used as workaround.
 
             var ws;
             var connected = false;
+            var artists = [];
 
             function init() {
                 connected = false;
@@ -182,31 +153,23 @@ installed. It is used as workaround.
 
                     if (data == null) {
                     }
-                    else if (data.type == 'message') {
-                        displayMessage(data.content);
-                    }
-                    else if (data.type == 'slide') {
-                        displayMessage(data.content.content);
-                    }
                     else if (data.type == 'status') {
                         if (data.content.clients != null) {
                             $('#clients_status').html(data.content.clients);
                         }
-                        if (data.content.dots != null) {
-                            $('#dots_status').html(data.content.dots);
-                        }
                     }
-                    else if (data.type == 'dot') {
-                        var content = data.content;
-
-                        addPoint(content.x, content.y, content.col);
+                    else if (data.type == 'move') {
+                        var canvas = $('canvas');
+                        var pen = canvas[0].getContext("2d");
+                        pen.beginPath();
+                        pen.moveTo(data.x, data.y);
                     }
-                    else if (data.type == 'dots') {
-                        var content = data.content;
-
-                        for (var i = 0; i < content.length; i++) {
-                           addPoint(content[i].x, content[i].y, content[i].col);
-                        }
+                    else if (data.type == 'line') {
+                        var canvas = $('canvas');
+                        var pen = canvas[0].getContext("2d");
+                        pen.strokeStyle = data.col;
+                        pen.lineTo(data.x, data.y);
+                        pen.stroke();
                     }
                 };
 
@@ -216,20 +179,7 @@ installed. It is used as workaround.
             }
 
             function displayMessage(msg) {
-                $('#canvas').html(msg);
-            }
-
-            function addPoint(x, y, col) {
-                pointer = $('<span>').css({
-                    'position':'absolute',
-                    'background-color':col,
-                    'width':'5px',
-                    'height':'5px',
-                    top: y,
-                    left: x
-                });
-
-                $('#canvas').append(pointer);
+                $('#content').html(msg);
             }
 
             function getRandomColor() {
@@ -259,25 +209,52 @@ installed. It is used as workaround.
                 return '#' + color;
             }
 
+            function fixCoords(pageX, pageY) {
+                var position = $('canvas').offset();
+
+                return {
+                    x: (pageX - position.left),
+                    y: (pageY - position.top)
+                };
+            };
+
             function initCanvas() {
-                var draw = false;
                 var col = getRandomColor();
 
-                $('#canvas').html('');
+                $('#content').html('');
+                $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
 
-                //set it true on mousedown
-                $('#canvas').mousedown(function(){draw=true;});
+                var canvas = $('canvas');
 
-                //reset it on mouseup
-                $('#canvas').mouseup(function(){draw=false;});
+                var onTouchStart = function(event) {
+                    var coords = fixCoords(event.pageX, event.pageY);
+                    ws.send($.toJSON({"type" : "move",
+                                "x" : coords.x,
+                                "y" : coords.y,
+                                "col" : col
+                            }));
 
-                $('#canvas').mousemove(function(e) {
-                    //if mouse is down
-                    if(draw == true) {
-                        //addPoint(e.pageX, e.pageY, col);
+                    canvas.bind("mousemove", onTouchMove);
+                    canvas.bind("mouseup", onTouchEnd);
+                };
 
-                        ws.send($.toJSON({'x': e.pageX, 'y' : e.pageY, 'col' : col}));
-                    }
+                var onTouchMove = function(event) {
+                    var coords = fixCoords(event.pageX, event.pageY);
+                    ws.send($.toJSON({"type" : "line",
+                                "x" : coords.x,
+                                "y" : coords.y,
+                                "col" : col
+                            }));
+                };
+
+                var onTouchEnd = function(event) {
+                    canvas.unbind("mousemove");
+                    canvas.unbind("mouseup");
+                };
+
+                canvas.bind("mousedown", function(event) {
+                    onTouchStart(event);
+                    return false;
                 });
             }
 
@@ -289,12 +266,11 @@ installed. It is used as workaround.
     <body>
         <div id="status">
             clients: <span id="clients_status">n/a</span><br />
-            dots: <span id="dots_status">n/a</span><br />
         </div>
         <div class="container">
             <table border="0" height="100%" style="margin:auto">
             <tr><td style="vertical-align:middle">
-                <div id="canvas">
+                <div id="content">
                     <%== content %>
                 </div>
             </td></tr>
