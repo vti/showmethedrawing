@@ -43,7 +43,7 @@ websocket '/' => sub {
             shift @$history while @$history > 100;
 
             # Send a new draw to everybody
-            _send_draw_broadcast(%$message);
+            _send_draw_broadcast($tx, %$message);
         }
     );
 
@@ -79,7 +79,12 @@ sub _send_status {
 }
 
 sub _send_broadcast {
+    my $tx = '';
+    $tx = shift if @_ % 2 > 0;
+    $tx = "$tx";
+
     foreach my $cid (keys %$clients) {
+        next if $cid eq $tx;
         $clients->{$cid}->{tx}->send_json({@_});
     }
 }
@@ -224,6 +229,8 @@ installed. It is used as workaround.
                 $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
 
                 var canvas = $('canvas');
+                var pen = canvas[0].getContext("2d");
+                pen.strokeStyle = col;
 
                 var onTouchStart = function(event) {
                     var coords = fixCoords(event.pageX, event.pageY);
@@ -231,12 +238,20 @@ installed. It is used as workaround.
                     x0 = coords.x;
                     y0 = coords.y;
 
+                    pen.beginPath();
+                    pen.moveTo(x0, y0);
+
                     canvas.bind("mousemove", onTouchMove);
                     canvas.bind("mouseup", onTouchEnd);
                 };
 
                 var onTouchMove = function(event) {
                     var coords = fixCoords(event.pageX, event.pageY);
+
+                    pen.strokeStyle = col;
+                    pen.lineTo(coords.x, coords.y);
+                    pen.stroke();
+
                     ws.send($.toJSON({"type" : "line",
                                 "x0" : x0,
                                 "y0" : y0,
