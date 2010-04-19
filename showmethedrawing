@@ -90,7 +90,7 @@ sub _send_broadcast {
 }
 
 # see script/flash-policy-server
-print "Remember, you need to also run script/flash-policy-server as root for this to work...\n";
+print "Remember, you need to also run 'sudo perl mojo/examples/flash-policy-server' as root for this to work...\n";
 
 app->start;
 
@@ -260,7 +260,7 @@ installed. It is used as workaround.
                         context.moveTo(data.x0, data.y0);
                         context.lineTo(data.x1, data.y1);
                         context.stroke();
-                        context.closePath();
+                        //context.closePath();
                     }
                 }
             }
