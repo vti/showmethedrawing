@@ -269,11 +269,6 @@ installed. It is used as workaround.
 
                     if (data == null) {
                     }
-                    else if (data.type == 'status') {
-                        if (data.content.clients != null) {
-                            $('#clients_status').html(data.content.clients);
-                        }
-                    }
                     else if (data.type == 'chat') {
                         var log = $('#log');
                         if (data.nick) {
