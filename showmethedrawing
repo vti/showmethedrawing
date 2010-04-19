@@ -218,7 +218,10 @@ installed. It is used as workaround.
             // Based on http://devfiles.myopera.com/articles/649/example2.js
             function initCanvas() {
                 $('#content').html('');
+                $('#content').append('<div style="text-align:right"><button id="clear">clear</button></div>');
                 $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
+
+                $('#clear').click(function () {context.clearRect(0, 0, 800, 500)});
 
                 col = getRandomColor();
 
