@@ -1,0 +1,43 @@
+Installation
+
+To check out the code and clone dependencies:
+
+git clone git://github.com/vti/showmethedrawing.git
+cd showmethedrawing
+git submodule update --init
+
+
+Running
+
+For non websocket native browsers, you need a flash policy server running (port
+843, so it needs to run as root)
+
+sudo ./script/flash-policy-server &
+
+Documentation
+
+This is a collaborative drawing software.
+
+Communication between client and server is done via WebSockets. For JavaScript
+abstraction JQuery is used. Server software is build on top of Mojolicous
+framework.
+
+Credits
+
+* Sebastian Riedel for Mojolicious
+  http://github.com/kraih/mojo.git
+
+* David Davis for useful websocket examples
+  http://github.com/xantus/mojo-websocket-examples
+
+* gimite for Flash workaround for non websocket native browsers
+  http://github.com/gimite/web-socket-js
+
+* JQuery team for JQuery
+  http://jquery.com
+
+* Brantley Harris for JQuery JSON plugin
+  http://code.google.com/p/jquery-json/
+
+* Stefan Petre for JQuery ColorPicker plugin
+  http://www.eyecon.ro/colorpicker/
