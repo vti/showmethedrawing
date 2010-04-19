@@ -112,8 +112,10 @@ installed. It is used as workaround.
     <head>
         <title>Presentation</title>
         <link rel="stylesheet" href="/main.css" type="text/css" />
+        <link rel="stylesheet" href="/colorpicker.css" type="text/css" />
         <script type="text/javascript" src="/jquery.min.js"></script>
         <script type="text/javascript" src="/jquery.json.min.js"></script>
+        <script type="text/javascript" src="/colorpicker.js"></script>
         <script type="text/javascript">
             // Only load the flash fallback when needed
             if (!('WebSocket' in window)) {
@@ -220,10 +222,19 @@ installed. It is used as workaround.
                 $('#content').html('');
                 $('#content').append('<div style="text-align:right"><button id="clear">clear</button></div>');
                 $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
+                $('#content').append('<div id="colorpicker"></div>');
 
                 $('#clear').click(function () {context.clearRect(0, 0, 800, 500)});
 
                 col = getRandomColor();
+
+                $('#colorpicker').ColorPicker({
+                    flat: true,
+                    color: col,
+                    onChange: function (hsb, hex, rgb) {
+                        col = '#' + hex;
+                    }
+                });
 
                 // Find the canvas element.
                 canvas = $('canvas');
