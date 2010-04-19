@@ -342,6 +342,9 @@ installed. It is used as workaround.
         </script>
     </head>
     <body>
+        <div id="about">
+            Source code: <a href="http://github.com/vti/showmethedrawing">http://github.com/vti/showmethedrawing</a>
+        </div>
         <div id="status">
             clients: <span id="clients_status">n/a</span><br />
         </div>
