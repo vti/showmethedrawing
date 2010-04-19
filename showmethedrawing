@@ -10,6 +10,7 @@ use Mojo::ByteStream;
 @ARGV = qw/daemon/ unless @ARGV;
 
 my $clients = {};
+my $chat_clients = {};
 my $history = [];
 
 websocket '/' => sub {
@@ -19,7 +20,6 @@ websocket '/' => sub {
     my $cid = "$tx";
 
     $clients->{$cid}->{tx} = $tx;
-    $clients->{$cid}->{nick} = 'Artist' . (keys %$clients) . int(rand(10000));
 
     my $total_clients = keys %$clients;
     my $ip = $tx->remote_address;
@@ -28,9 +28,56 @@ websocket '/' => sub {
     # Notify everybody that new client is connected
     _send_broadcast_status(clients => $total_clients);
 
-    foreach my $message (@$history) {
-        $self->send_json($message);
-    }
+    #foreach my $message (@$history) {
+    #    $self->send_json($message);
+    #}
+
+    $self->receive_message(
+        sub {
+            my ($self, $message) = @_;
+
+            my $json = Mojo::JSON->new;
+
+            $message = $json->decode($message);
+            return unless $message || $json->error;
+
+            #push @$history, $message;
+            #shift @$history while @$history > 100;
+
+            # Send a new draw to everybody
+            _send_draw_broadcast($tx, %$message);
+        }
+    );
+
+    $self->finished(
+        sub {
+            delete $clients->{$cid};
+
+            my $total_clients = keys %$clients;
+
+            # Notify everybody that client has disconnected
+            _send_broadcast_status(clients => $total_clients);
+
+            app->log->debug('Client disconnected');
+        }
+    );
+};
+
+websocket '/chat' => sub {
+    my $self = shift;
+    my $tx = $self->tx;
+
+    my $cid = "$tx";
+
+    $chat_clients->{$cid}->{tx} = $tx;
+    $chat_clients->{$cid}->{nick} = 'Artist' . (keys %$clients) . int(rand(10000));
+
+    my $total_clients = keys %$clients;
+    my $ip = $tx->remote_address;
+    app->log->debug("Client '$ip' connected [$total_clients]");
+
+    # Notify everybody that new client is connected
+    #_send_broadcast_status(clients => $total_clients);
 
     $self->receive_message(
         sub {
@@ -46,38 +93,31 @@ websocket '/' => sub {
                     my $new_nick = $1;
 
                     unless (grep { $new_nick eq $_ }
-                        map { $clients->{$_}->{nick} } keys %$clients)
+                        map { $chat_clients->{$_}->{nick} } keys %$clients)
                     {
-                        my $old_nick = $clients->{$cid}->{nick};
+                        my $old_nick = $chat_clients->{$cid}->{nick};
                         $message->{message} = "$old_nick is known as $new_nick";
-                        $clients->{$cid}->{nick} = $new_nick;
-                        _send_broadcast(%$message);
+                        $chat_clients->{$cid}->{nick} = $new_nick;
+                        _send_chat_broadcast(%$message);
                     }
                 }
                 else {
-                    $message->{nick} = $clients->{$cid}->{nick};
+                    $message->{nick} = $chat_clients->{$cid}->{nick};
                     $message->{message} = Mojo::ByteStream->new($message->{message})->xml_escape;
-                    _send_broadcast(%$message);
+                    _send_chat_broadcast(%$message);
                 }
-            }
-            else {
-                push @$history, $message;
-                shift @$history while @$history > 100;
-
-                # Send a new draw to everybody
-                _send_draw_broadcast($tx, %$message);
             }
         }
     );
 
     $self->finished(
         sub {
-            delete $clients->{$cid};
+            delete $chat_clients->{$cid};
 
-            my $total_clients = keys %$clients;
+            #my $total_clients = keys %$chat_clients;
 
-            # Notify everybody that client has disconnected
-            _send_broadcast_status(clients => $total_clients);
+            ## Notify everybody that client has disconnected
+            #_send_broadcast_status(clients => $total_clients);
 
             app->log->debug('Client disconnected');
         }
@@ -99,6 +139,12 @@ sub _send_status {
     my $tx = shift;
 
     $tx->send_json({type => 'status', content => {@_}});
+}
+
+sub _send_chat_broadcast {
+    foreach my $cid (keys %$chat_clients) {
+        $chat_clients->{$cid}->{tx}->send_json({@_});
+    }
 }
 
 sub _send_broadcast {
@@ -131,6 +177,7 @@ installed. It is used as workaround.
 
 @@ layouts/wrapper.html.ep
 % my $url = $self->req->url->to_abs->scheme($self->req->is_secure ? 'wss' : 'ws')->path('/');
+% my $url_chat = $self->req->url->to_abs->scheme($self->req->is_secure ? 'wss' : 'ws')->path('/chat');
 <!doctype html><html>
     <head>
         <title>Presentation</title>
@@ -155,12 +202,12 @@ installed. It is used as workaround.
                 WebSocket.__swfLocation = 'web-socket-js/WebSocketMain.swf';
             }
 
-            var ws;
+            var ws, ws_chat;
             var connected = false;
             var canvas, context, tool, col;
             var queue = [];
 
-            function init() {
+            function initWebsocket() {
                 connected = false;
                 displayMessage('Connecting...');
 
@@ -189,16 +236,6 @@ installed. It is used as workaround.
                             $('#clients_status').html(data.content.clients);
                         }
                     }
-                    else if (data.type == 'chat') {
-                        var log = $('#log');
-                        if (data.nick) {
-                            log.html(log.html() + '> ' + data.nick + ': ' + data.message + "\n");
-                        }
-                        else {
-                            log.html(log.html() + '! ' + data.message + "\n");
-                        }
-                        log.animate({scrollTop: log[0].scrollHeight});
-                    }
                     else if (data.type == 'line') {
                         if (tool && tool.started) {
                             queue.push(data);
@@ -216,6 +253,40 @@ installed. It is used as workaround.
 
                 ws.onclose = function() {
                     displayMessage('Disconnected. <a href="/">Reconnect</a>');
+                }
+            }
+
+            function initWebsocketChat() {
+                connected = false;
+
+                // Connect to WebSocket
+                ws_chat = new WebSocket('<%= $url_chat %>');
+
+                ws_chat.onopen = function() {};
+
+                ws_chat.onmessage = function(e) {
+                    var data = $.evalJSON(e.data);
+
+                    if (data == null) {
+                    }
+                    else if (data.type == 'status') {
+                        if (data.content.clients != null) {
+                            $('#clients_status').html(data.content.clients);
+                        }
+                    }
+                    else if (data.type == 'chat') {
+                        var log = $('#log');
+                        if (data.nick) {
+                            log.html(log.html() + '> ' + data.nick + ': ' + data.message + "\n");
+                        }
+                        else {
+                            log.html(log.html() + '! ' + data.message + "\n");
+                        }
+                        log.animate({scrollTop: log[0].scrollHeight});
+                    }
+                };
+
+                ws_chat.onclose = function() {
                 }
             }
 
@@ -292,7 +363,7 @@ installed. It is used as workaround.
                     var message = $('#chat-input').val().substring(0, 140);
                     $('#chat-input').val('');
                     if (message && message != '') {
-                        ws.send($.toJSON({"type" : "chat", "message" : toUTF(message)}));
+                        ws_chat.send($.toJSON({"type" : "chat", "message" : toUTF(message)}));
                     }
                     return false;
                 });
@@ -408,7 +479,8 @@ installed. It is used as workaround.
             }
 
             $(document).ready(function() {
-                init();
+                initWebsocket();
+                initWebsocketChat();
             });
         </script>
     </head>
