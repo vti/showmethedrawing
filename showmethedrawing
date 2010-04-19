@@ -165,11 +165,11 @@ installed. It is used as workaround.
                         }
                     }
                     else if (data.type == 'line') {
-                        context.strokeStyle = '#000000';
-                        if (tool.started) {
+                        if (tool && tool.started) {
                             queue.push(data);
                         }
                         else {
+                            context.strokeStyle = data.col;
                             context.beginPath();
                             context.moveTo(data.x0, data.y0);
                             context.lineTo(data.x1, data.y1);
@@ -209,7 +209,7 @@ installed. It is used as workaround.
 
                 var color = '';
                 for (i = 0; i < 6; i++){
-                    color += colors[Math.round(Math.random() * colors.length) - 1]
+                    color += colors[Math.round(Math.random() * (colors.length - 1))]
                 }
 
                 return '#' + color;
@@ -220,8 +220,7 @@ installed. It is used as workaround.
                 $('#content').html('');
                 $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
 
-                //col = getRandomColor();
-                col = '#000000';
+                col = getRandomColor();
 
                 // Find the canvas element.
                 canvas = $('canvas');
@@ -242,8 +241,6 @@ installed. It is used as workaround.
                   return;
                 }
 
-                context.strokeStyle = col;
-
                 // Pencil tool instance.
                 tool = new tool_pencil();
 
@@ -256,6 +253,7 @@ installed. It is used as workaround.
                 if (queue.length) {
                     var data;
                     while ((data = queue.shift())) {
+                        context.strokeStyle = data.col;
                         context.beginPath();
                         context.moveTo(data.x0, data.y0);
                         context.lineTo(data.x1, data.y1);
@@ -272,6 +270,7 @@ installed. It is used as workaround.
                 this.last = {"x" : 0, "y" : 0};
 
                 this.mousedown = function (ev) {
+                    context.strokeStyle = col;
                     context.beginPath();
                     context.moveTo(ev._x, ev._y);
                     tool.started = true;
@@ -281,6 +280,7 @@ installed. It is used as workaround.
 
                 this.mousemove = function (ev) {
                   if (tool.started) {
+                    context.strokeStyle = col;
                     context.lineTo(ev._x, ev._y);
                     context.stroke();
 
