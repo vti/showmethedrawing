@@ -20,6 +20,16 @@
     z-index:2;
 }
 
+#colorpicker {
+    float:left;
+}
+
+#chat {
+    border:1px solid red;
+    padding:1em;
+    float:left;
+}
+
 #about {
     background:#ccc;
     font-weight:bold;

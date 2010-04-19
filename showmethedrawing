@@ -5,6 +5,7 @@ use lib "$FindBin::Bin/mojo/lib";
 
 use Mojolicious::Lite;
 use Mojo::JSON;
+use Mojo::ByteStream;
 
 @ARGV = qw/daemon/ unless @ARGV;
 
@@ -39,11 +40,17 @@ websocket '/' => sub {
             $message = $json->decode($message);
             return unless $message || $json->error;
 
-            push @$history, $message;
-            shift @$history while @$history > 100;
+            if ($message->{type} && $message->{type} eq 'chat') {
+                $message->{message} = Mojo::ByteStream->new($message->{message})->xml_escape;
+                _send_broadcast(%$message);
+            }
+            else {
+                push @$history, $message;
+                shift @$history while @$history > 100;
 
-            # Send a new draw to everybody
-            _send_draw_broadcast($tx, %$message);
+                # Send a new draw to everybody
+                _send_draw_broadcast($tx, %$message);
+            }
         }
     );
 
@@ -166,6 +173,11 @@ installed. It is used as workaround.
                             $('#clients_status').html(data.content.clients);
                         }
                     }
+                    else if (data.type == 'chat') {
+                        var log = $('#log');
+                        log.html(log.html() + '> ' + data.message + "\n");
+                        log.animate({scrollTop: log[0].scrollHeight});
+                    }
                     else if (data.type == 'line') {
                         if (tool && tool.started) {
                             queue.push(data);
@@ -221,10 +233,24 @@ installed. It is used as workaround.
             function initCanvas() {
                 $('#content').html('');
                 $('#content').append('<div style="text-align:right"><button id="clear">clear</button></div>');
-                $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
+                $('#content').append('<div><canvas id="canvas" width="800" height="500"></canvas></div>');
                 $('#content').append('<div id="colorpicker"></div>');
 
+                $('#content').append('<div id="chat"></div>');
+                $('#chat').append('<pre id="log" style="height:200px; width: 400px; overflow: auto;"></pre>');
+
+                $('#chat').append('<form id="chat-form"><input id="chat-input" style="width:350px" /></form>');
+
                 $('#clear').click(function () {context.clearRect(0, 0, 800, 500)});
+
+                $('#chat-form').submit(function() {
+                    var message = $('#chat-input').val().substring(0, 140);
+                    $('#chat-input').val('');
+                    if (message && message != '') {
+                        ws.send($.toJSON({"type" : "chat", "message" : message}));
+                    }
+                    return false;
+                });
 
                 col = getRandomColor();
 
