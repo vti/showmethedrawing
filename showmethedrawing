@@ -132,7 +132,8 @@ installed. It is used as workaround.
 
             var ws;
             var connected = false;
-            var artists = [];
+            var canvas, context, tool, col;
+            var queue = [];
 
             function init() {
                 connected = false;
@@ -164,13 +165,17 @@ installed. It is used as workaround.
                         }
                     }
                     else if (data.type == 'line') {
-                        var canvas = $('canvas');
-                        var pen = canvas[0].getContext("2d");
-                        pen.strokeStyle = data.col;
-                        pen.beginPath();
-                        pen.moveTo(data.x0, data.y0);
-                        pen.lineTo(data.x1, data.y1);
-                        pen.stroke();
+                        context.strokeStyle = '#000000';
+                        if (tool.started) {
+                            queue.push(data);
+                        }
+                        else {
+                            context.beginPath();
+                            context.moveTo(data.x0, data.y0);
+                            context.lineTo(data.x1, data.y1);
+                            context.stroke();
+                            context.closePath();
+                        }
                     }
                 };
 
@@ -204,75 +209,117 @@ installed. It is used as workaround.
 
                 var color = '';
                 for (i = 0; i < 6; i++){
-                    color += colors[Math.round(Math.random() * colors.length)]
+                    color += colors[Math.round(Math.random() * colors.length) - 1]
                 }
 
                 return '#' + color;
             }
 
-            function fixCoords(pageX, pageY) {
-                var position = $('canvas').offset();
-
-                return {
-                    x: (pageX - position.left),
-                    y: (pageY - position.top)
-                };
-            };
-
-            var x0;
-            var y0;
-
+            // Based on http://devfiles.myopera.com/articles/649/example2.js
             function initCanvas() {
-                var col = getRandomColor();
-
                 $('#content').html('');
                 $('#content').append('<canvas id="canvas" width="800" height="500"></canvas>');
 
-                var canvas = $('canvas');
-                var pen = canvas[0].getContext("2d");
-                pen.strokeStyle = col;
+                //col = getRandomColor();
+                col = '#000000';
 
-                var onTouchStart = function(event) {
-                    var coords = fixCoords(event.pageX, event.pageY);
+                // Find the canvas element.
+                canvas = $('canvas');
+                if (!canvas) {
+                  alert('Error: I cannot find the canvas element!');
+                  return;
+                }
 
-                    x0 = coords.x;
-                    y0 = coords.y;
+                if (!canvas[0].getContext) {
+                  alert('Error: no canvas.getContext!');
+                  return;
+                }
 
-                    pen.beginPath();
-                    pen.moveTo(x0, y0);
+                // Get the 2D canvas context.
+                context = canvas[0].getContext('2d');
+                if (!context) {
+                  alert('Error: failed to getContext!');
+                  return;
+                }
 
-                    canvas.bind("mousemove", onTouchMove);
-                    canvas.bind("mouseup", onTouchEnd);
+                context.strokeStyle = col;
+
+                // Pencil tool instance.
+                tool = new tool_pencil();
+
+                canvas.bind('mousedown', ev_canvas, false);
+                canvas.bind('mousemove', ev_canvas, false);
+                canvas.bind('mouseup',   ev_canvas, false);
+            }
+
+            function spin() {
+                if (queue.length) {
+                    var data;
+                    while ((data = queue.shift())) {
+                        context.beginPath();
+                        context.moveTo(data.x0, data.y0);
+                        context.lineTo(data.x1, data.y1);
+                        context.stroke();
+                        context.closePath();
+                    }
+                }
+            }
+
+            function tool_pencil () {
+                var tool = this;
+                this.started = false;
+
+                this.last = {"x" : 0, "y" : 0};
+
+                this.mousedown = function (ev) {
+                    context.beginPath();
+                    context.moveTo(ev._x, ev._y);
+                    tool.started = true;
+                    tool.last.x = ev._x;
+                    tool.last.y = ev._y;
                 };
 
-                var onTouchMove = function(event) {
-                    var coords = fixCoords(event.pageX, event.pageY);
+                this.mousemove = function (ev) {
+                  if (tool.started) {
+                    context.lineTo(ev._x, ev._y);
+                    context.stroke();
 
-                    pen.strokeStyle = col;
-                    pen.lineTo(coords.x, coords.y);
-                    pen.stroke();
+                    //spin();
 
                     ws.send($.toJSON({"type" : "line",
-                                "x0" : x0,
-                                "y0" : y0,
-                                "x1" : coords.x,
-                                "y1" : coords.y,
+                                "x0" : tool.last.x,
+                                "y0" : tool.last.y,
+                                "x1" : ev._x,
+                                "y1" : ev._y,
                                 "col" : col
                             }));
 
-                    x0 = coords.x;
-                    y0 = coords.y;
+                    tool.last.x = ev._x;
+                    tool.last.y = ev._y;
+                  }
                 };
 
-                var onTouchEnd = function(event) {
-                    canvas.unbind("mousemove");
-                    canvas.unbind("mouseup");
-                };
+                this.mouseup = function (ev) {
+                  if (tool.started) {
+                    tool.mousemove(ev);
+                    tool.started = false;
 
-                canvas.bind("mousedown", function(event) {
-                    onTouchStart(event);
-                    return false;
-                });
+                    spin();
+                  }
+                };
+            }
+
+            function ev_canvas (ev) {
+                var pos = canvas.offset();
+
+                ev._x = ev.pageX - pos.left;
+                ev._y = ev.pageY - pos.top;
+
+                // Call the event handler of the tool.
+                var func = tool[ev.type];
+                if (func) {
+                    func(ev);
+                }
             }
 
             $(document).ready(function() {
