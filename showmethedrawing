@@ -19,6 +19,7 @@ websocket '/' => sub {
     my $cid = "$tx";
 
     $clients->{$cid}->{tx} = $tx;
+    $clients->{$cid}->{nick} = 'Artist' . (keys %$clients) . int(rand(10000));
 
     my $total_clients = keys %$clients;
     my $ip = $tx->remote_address;
@@ -41,8 +42,23 @@ websocket '/' => sub {
             return unless $message || $json->error;
 
             if ($message->{type} && $message->{type} eq 'chat') {
-                $message->{message} = Mojo::ByteStream->new($message->{message})->xml_escape;
-                _send_broadcast(%$message);
+                if ($message->{message} =~ s/^\/nick (.*)//) {
+                    my $new_nick = $1;
+
+                    unless (grep { $new_nick eq $_ }
+                        map { $clients->{$_}->{nick} } keys %$clients)
+                    {
+                        my $old_nick = $clients->{$cid}->{nick};
+                        $message->{message} = "$old_nick is known as $new_nick";
+                        $clients->{$cid}->{nick} = $new_nick;
+                        _send_broadcast(%$message);
+                    }
+                }
+                else {
+                    $message->{nick} = $clients->{$cid}->{nick};
+                    $message->{message} = Mojo::ByteStream->new($message->{message})->xml_escape;
+                    _send_broadcast(%$message);
+                }
             }
             else {
                 push @$history, $message;
@@ -175,7 +191,12 @@ installed. It is used as workaround.
                     }
                     else if (data.type == 'chat') {
                         var log = $('#log');
-                        log.html(log.html() + '> ' + data.message + "\n");
+                        if (data.nick) {
+                            log.html(log.html() + '> ' + data.nick + ': ' + data.message + "\n");
+                        }
+                        else {
+                            log.html(log.html() + '! ' + data.message + "\n");
+                        }
                         log.animate({scrollTop: log[0].scrollHeight});
                     }
                     else if (data.type == 'line') {
