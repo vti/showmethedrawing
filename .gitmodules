@@ -4,3 +4,9 @@
 [submodule "public/web-socket-js"]
 	path = public/web-socket-js
 	url = git://github.com/gimite/web-socket-js.git
+[submodule "contrib/sockjs"]
+	path = contrib/sockjs
+	url = https://github.com/vti/sockjs-perl
+[submodule "contrib/Twiggy"]
+	path = contrib/Twiggy
+	url = https://github.com/vti/Twiggy

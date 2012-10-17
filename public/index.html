@@ -1,0 +1,254 @@
+<!doctype html><html>
+    <head>
+        <title>Draw!</title>
+        <link rel="stylesheet" href="/main.css" type="text/css" />
+        <link rel="stylesheet" href="/colorpicker.css" type="text/css" />
+        <script type="text/javascript" src="/sockjs.min.js"></script>
+        <script type="text/javascript" src="/jquery.min.js"></script>
+        <script type="text/javascript" src="/jquery.json.min.js"></script>
+        <script type="text/javascript" src="/colorpicker.js"></script>
+        <script type="text/javascript" src="/sockjs.min.js"></script>
+        <script type="text/javascript">
+            var ws;
+            var connected = false;
+            var canvas, context, tool, col;
+            var queue = [];
+
+            function initWebsocket() {
+                connected = false;
+                displayMessage('Connecting...');
+
+                // Connect to WebSocket
+                ws = new SockJS('http://localhost:5000/draw');
+
+                ws.onerror = function(e) {
+                    displayMessage("Error: " + e);
+                };
+
+                // Set event handlers
+                ws.onopen = function() {
+                    connected = true;
+                    displayMessage('Connected. Loading...');
+
+                    initCanvas();
+                };
+
+                ws.onmessage = function(e) {
+                    var data = $.evalJSON(e.data);
+
+                    if (data == null) {
+                    }
+                    else if (data.type == 'status') {
+                        if (data.content.clients != null) {
+                            $('#clients_status').html(data.content.clients);
+                        }
+                    }
+                    else if (data.type == 'line') {
+                        if (tool && tool.started) {
+                            queue.push(data);
+                        }
+                        else {
+                            context.strokeStyle = data.col;
+                            context.beginPath();
+                            context.moveTo(data.x0, data.y0);
+                            context.lineTo(data.x1, data.y1);
+                            context.stroke();
+                            context.closePath();
+                        }
+                    }
+                };
+
+                ws.onclose = function() {
+                    displayMessage('Disconnected. <a href="/">Reconnect</a>');
+                }
+            }
+
+            function displayMessage(msg) {
+                $('#content').html(msg);
+            }
+
+            function getRandomColor() {
+                colors = new Array(14);
+                colors[0]="0";
+                colors[1]="1";
+                colors[2]="2";
+                colors[3]="3";
+                colors[4]="4";
+                colors[5]="5";
+                colors[5]="6";
+                colors[6]="7";
+                colors[7]="8";
+                colors[8]="9";
+                colors[9]="a";
+                colors[10]="b";
+                colors[11]="c";
+                colors[12]="d";
+                colors[13]="e";
+                colors[14]="f";
+
+                var color = '';
+                for (i = 0; i < 6; i++){
+                    color += colors[Math.round(Math.random() * (colors.length - 1))]
+                }
+
+                return '#' + color;
+            }
+
+            function toUTF(string) {
+                string = string.replace(/\r\n/g, "\n");
+                var utftext = "";
+
+                for (var n = 0; n < string.length; n++) {
+                    var c = string.charCodeAt(n);
+
+                    if (c < 128) {
+                        utftext += String.fromCharCode(c);
+                    }
+                    else if((c > 127) && (c < 2048)) {
+                        utftext += String.fromCharCode((c >> 6) | 192);
+                        utftext += String.fromCharCode((c & 63) | 128);
+                    }
+                    else {
+                        utftext += String.fromCharCode((c >> 12) | 224);
+                        utftext += String.fromCharCode(((c >> 6) & 63) | 128);
+                        utftext += String.fromCharCode((c & 63) | 128);
+                    }
+                }
+
+                return utftext;
+            }
+
+            // Based on http://devfiles.myopera.com/articles/649/example2.js
+            function initCanvas() {
+                $('#content').html('');
+                $('#content').append('<div style="text-align:right"><button id="clear">clear</button></div>');
+                $('#content').append('<div><canvas id="canvas" width="800" height="500"></canvas></div>');
+                $('#content').append('<div id="colorpicker"></div>');
+
+                $('#clear').click(function () {context.clearRect(0, 0, 800, 500)});
+
+                col = getRandomColor();
+
+                $('#colorpicker').ColorPicker({
+                    flat: true,
+                    color: col,
+                    onChange: function (hsb, hex, rgb) {
+                        col = '#' + hex;
+                    }
+                });
+
+                // Find the canvas element.
+                canvas = $('canvas');
+                if (!canvas) {
+                  alert('Error: I cannot find the canvas element!');
+                  return;
+                }
+
+                if (!canvas[0].getContext) {
+                  alert('Error: no canvas.getContext!');
+                  return;
+                }
+
+                // Get the 2D canvas context.
+                context = canvas[0].getContext('2d');
+                if (!context) {
+                  alert('Error: failed to getContext!');
+                  return;
+                }
+
+                // Pencil tool instance.
+                tool = new tool_pencil();
+
+                canvas.bind('mousedown', ev_canvas, false);
+                canvas.bind('mousemove', ev_canvas, false);
+                canvas.bind('mouseup',   ev_canvas, false);
+            }
+
+            function spin() {
+                if (queue.length) {
+                    var data;
+                    while ((data = queue.shift())) {
+                        context.strokeStyle = data.col;
+                        context.beginPath();
+                        context.moveTo(data.x0, data.y0);
+                        context.lineTo(data.x1, data.y1);
+                        context.stroke();
+                        //context.closePath();
+                    }
+                }
+            }
+
+            function tool_pencil () {
+                var tool = this;
+                this.started = false;
+
+                this.last = {"x" : 0, "y" : 0};
+
+                this.mousedown = function (ev) {
+                    context.strokeStyle = col;
+                    context.beginPath();
+                    context.moveTo(ev._x, ev._y);
+                    tool.started = true;
+                    tool.last.x = ev._x;
+                    tool.last.y = ev._y;
+                };
+
+                this.mousemove = function (ev) {
+                  if (tool.started) {
+                    context.strokeStyle = col;
+                    context.lineTo(ev._x, ev._y);
+                    context.stroke();
+
+                    //spin();
+
+                    ws.send($.toJSON({"type" : "line",
+                                "x0" : tool.last.x,
+                                "y0" : tool.last.y,
+                                "x1" : ev._x,
+                                "y1" : ev._y,
+                                "col" : col
+                            }));
+
+                    tool.last.x = ev._x;
+                    tool.last.y = ev._y;
+                  }
+                };
+
+                this.mouseup = function (ev) {
+                  if (tool.started) {
+                    tool.mousemove(ev);
+                    tool.started = false;
+
+                    spin();
+                  }
+                };
+            }
+
+            function ev_canvas (ev) {
+                var pos = canvas.offset();
+
+                ev._x = ev.pageX - pos.left;
+                ev._y = ev.pageY - pos.top;
+
+                // Call the event handler of the tool.
+                var func = tool[ev.type];
+                if (func) {
+                    func(ev);
+                }
+            }
+
+            $(document).ready(function() {
+                initWebsocket();
+            });
+        </script>
+    </head>
+    <body>
+        <div class="container">
+            <table border="0" height="100%" style="margin:auto">
+            <tr><td style="vertical-align:middle">
+                <div id="content"></div>
+            </td></tr>
+            </table>
+        </div>
+    </body>
+</html>
